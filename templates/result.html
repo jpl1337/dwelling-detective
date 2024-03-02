@@ -1,0 +1,9 @@
+<h2>Locations Near the Address</h2>
+
+{{range .locations}}
+  <div>
+    <p><strong>{{.Name}}</strong></p>
+    <p>Distance: {{.Distance}}</p>
+    <p>Travel Time: {{.TravelTime}}</p>
+  </div>
+{{end}}
