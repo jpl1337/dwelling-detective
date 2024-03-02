@@ -1,6 +1,6 @@
 # Dwelling Detective
 
-### A webapp to help users quickly find a list of common destinations near a specified address.
+### A webapp to help users quickly find common destinations near a specified address.
 
 <details>
 <summary>
