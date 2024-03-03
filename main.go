@@ -1,16 +1,42 @@
 package main
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"io/ioutil"
+	"log"
 	"net/http"
+	"os"
 	"strings"
 
 	"github.com/gin-gonic/gin"
+	"github.com/joho/godotenv"
+	"googlemaps.github.io/maps"
 )
 
+// Define a struct to hold location details
+type Location struct {
+	Name     string `json:"name"`
+	Vicinity string `json:"vicinity"`
+	Geometry struct {
+		Location struct {
+			Lat float64 `json:"lat"`
+			Lng float64 `json:"lng"`
+		} `json:"location"`
+	} `json:"geometry"`
+}
+
+// LocationsResponse struct to hold the response from Google Places API
+type LocationsResponse struct {
+	Results []Location `json:"results"`
+}
+
 func main() {
+	err := godotenv.Load()
+	if err != nil {
+		log.Fatal("Error loading .env file")
+	}
 	router := gin.Default()
 
 	router.LoadHTMLGlob("templates/*")
@@ -23,7 +49,7 @@ func main() {
 		address := c.PostForm("address")
 
 		// Call a function to fetch locations using the Google Maps API
-		locations, err := getLocations(address)
+		locations, err := getLocations(os.Getenv("GOOGLE_API_KEY"), address)
 		if err != nil {
 			fmt.Println("Error:", err)
 			return
@@ -39,27 +65,38 @@ func main() {
 	router.Run(":8080")
 }
 
-// Define a struct to hold location details
-type Location struct {
-	Name       string
-	Distance   string
-	TravelTime string
-}
-
-func getLocations(address string) ([]Location, error) {
+func getLocations(api_key string, address string) ([]Location, error) {
 	// Convert address to coordinates using Google Maps Geocoding API
-	coordinates, err := getCoordinates(address)
+	coordinates, err := getCoordinates(api_key, address)
 	if err != nil {
 		return nil, err
 	}
+	c, err := maps.NewClient(maps.WithAPIKey("Insert-API-Key-Here"))
+	if err != nil {
+		log.Fatalf("fatal error: %s", err)
+	}
+	// Address is the street address that you want to geocode, in the format used by
+	// the national postal service of the country concerned.
+	// r := &maps.DirectionsRequest{
+	// 	Origin:      "Sydney",
+	// 	Destination: "Perth",
+	// }
+	// route, _, err := c.Directions(context.Background(), r)
+	// if err != nil {
+	// 	log.Fatalf("fatal error: %s", err)
+	// }
 
 	// Call Google Places API to get nearby locations
-	apiURL := fmt.Sprintf("https://maps.googleapis.com/maps/api/place/nearbysearch/json?location=%f,%f&radius=1500&type=grocery_or_supermarket|airport|bar|restaurant&key=YOUR_GOOGLE_PLACES_API_KEY", coordinates.Lat, coordinates.Lng)
-	response, err := http.Get(apiURL)
-	if err != nil {
-		return nil, err
-	}
-	defer response.Body.Close()
+	// apiURL := fmt.Sprintf(
+	// 	"https://maps.googleapis.com/maps/api/place/nearbysearch/json?location=",
+	// 	"%f,%f&radius=1500&type=grocery_or_supermarket|airport|bar|restaurant&key=%s",
+	// 	coordinates.Geometry.Location.Lat, coordinates.Geometry.Location.Lng, api_key)
+	// response, err := http.Get(apiURL)
+	// fmt.Println("GetLocations response: %s", response)
+	// if err != nil {
+	// 	return nil, err
+	// }
+	// defer response.Body.Close()
 
 	// Read and parse the response
 	body, err := ioutil.ReadAll(response.Body)
@@ -77,20 +114,28 @@ func getLocations(address string) ([]Location, error) {
 }
 
 // Function to get coordinates from an address using Google Maps Geocoding API
-func getCoordinates(address string) (*Location, error) {
+func getCoordinates(c, api_key string, address string) (*Location, error) {
 	address = strings.ReplaceAll(address, " ", "+")
-	apiURL := fmt.Sprintf("https://maps.googleapis.com/maps/api/geocode/json?address=%s&key=YOUR_GOOGLE_MAPS_API_KEY", address)
+	// apiURL := fmt.Sprintf(
+	// 	"https://maps.googleapis.com/maps/api/geocode/json?address=%s&key=%s",
+	// 	address, api_key)
 
-	response, err := http.Get(apiURL)
-	if err != nil {
-		return nil, err
-	}
-	defer response.Body.Close()
+	// response, err := http.Get(apiURL)
+	// fmt.Println("GetCoordinates response: %s", response)
 
-	body, err := ioutil.ReadAll(response.Body)
-	if err != nil {
-		return nil, err
+	// if err != nil {
+	// 	return nil, err
+	// }
+	// defer response.Body.Close()
+
+	// body, err := ioutil.ReadAll(response.Body)
+	// if err != nil {
+	// 	return nil, err
+	// }
+	r := &maps.GeocodingRequest{
+		Address: address,
 	}
+	c.Geocode(context.Background(), r)
 
 	var geocodeResponse LocationsResponse
 	err = json.Unmarshal(body, &geocodeResponse)
@@ -106,20 +151,4 @@ func getCoordinates(address string) (*Location, error) {
 	return nil, fmt.Errorf("No coordinates found for the given address")
 }
 
-// func getLocations(address string) []Location {
-// 	// Implement the logic to fetch data from Google Maps API
-// 	// Parse the response and return a slice of Location structs
-// 	// Include Name, Distance, and TravelTime in each struct
-// 	// You'll need to use the Maps JavaScript API for Places and Directions
-
-// 	// Mock data for testing
-// 	locations := []Location{
-// 		{Name: "Grocery Store 1", Distance: "1.5 miles", TravelTime: "5 minutes"},
-// 		{Name: "Airport 1", Distance: "10 miles", TravelTime: "20 minutes"},
-// 		{Name: "Bar 1", Distance: "0.8 miles", TravelTime: "3 minutes"},
-// 		{Name: "Restaurant 1", Distance: "2.2 miles", TravelTime: "8 minutes"},
-// 		{Name: "Grocery Store 2", Distance: "2.8 miles", TravelTime: "10 minutes"},
-// 	}
-
-// 	return locations
-// }
+// Test address: 1700, 6 Northside Dr NW Ste A-5,A, Atlanta, GA 30318
