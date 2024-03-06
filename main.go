@@ -2,32 +2,38 @@ package main
 
 import (
 	"context"
+	"encoding/csv"
 	"encoding/json"
 	"fmt"
 	"io/ioutil"
 	"log"
+	"math"
 	"net/http"
 	"os"
+	"path/filepath"
+	"runtime"
 	"strings"
+	"sync"
 
 	"github.com/gin-gonic/gin"
 	"github.com/joho/godotenv"
 	"googlemaps.github.io/maps"
 )
 
-// Define a struct to hold location details
-type Location struct {
-	Name     string `json:"name"`
-	Vicinity string `json:"vicinity"`
-	Geometry struct {
-		Location struct {
-			Lat float64 `json:"lat"`
-			Lng float64 `json:"lng"`
-		} `json:"location"`
-	} `json:"geometry"`
+// struct to hold coordinates
+type Coordinate struct {
+	Latitude  float64 `json:"latitude`
+	Longitude float64 `json:"longitude`
 }
 
-// LocationsResponse struct to hold the response from Google Places API
+// struct to hold location details
+type Location struct {
+	Name        string     `json:"name"`
+	Vicinity    string     `json:"vicinity"`
+	Coordinates Coordinate `json:"coordinates"`
+}
+
+// struct to hold the response from Google Places API
 type LocationsResponse struct {
 	Results []Location `json:"results"`
 }
@@ -115,6 +121,7 @@ func getLocations(api_key string, address string) ([]Location, error) {
 
 // Function to get coordinates from an address using Google Maps Geocoding API
 func getCoordinates(c, api_key string, address string) (*Location, error) {
+	// TODO: make this function return a Coordinates struct
 	address = strings.ReplaceAll(address, " ", "+")
 	// apiURL := fmt.Sprintf(
 	// 	"https://maps.googleapis.com/maps/api/geocode/json?address=%s&key=%s",
@@ -149,6 +156,110 @@ func getCoordinates(c, api_key string, address string) (*Location, error) {
 	}
 
 	return nil, fmt.Errorf("No coordinates found for the given address")
+}
+
+func getNearby(target Coordinate) {
+	// TODO: this needs to grab nearby locations that we're looking for
+	// the google nearby api is limited to 50km or about 31miles
+	// if airports are not found in this radius..
+	// find nearest airport from csv
+	findNearestAirport(target)
+}
+
+func findNearestAirport(target Coordinate) {
+	filePath := filepath.Join("data", "airports.csv")
+
+	allCoordinates, err := loadCoordinates(filePath)
+	if err != nil {
+		log.Fatal(err)
+	}
+	closestConcurrent := findClosestCoordinates(target, allCoordinates)
+	fmt.Printf("Concurrent: Closest Coordinate: %v\n", closestConcurrent)
+}
+
+func findClosestCoordinates(target Coordinate, allCoordinates []Coordinate) Coordinate {
+	numCPU := runtime.NumCPU()
+	chunkSize := (len(allCoordinates) + numCPU - 1) / numCPU // Divide coordinates into chunks for concurrent processing
+
+	var closestCoordinate Coordinate
+	closestDistance := math.MaxFloat64
+
+	var wg sync.WaitGroup
+	wg.Add(numCPU)
+
+	for i := 0; i < numCPU; i++ {
+		start := i * chunkSize
+		end := (i + 1) * chunkSize
+		if end > len(allCoordinates) {
+			end = len(allCoordinates)
+		}
+
+		go func(start, end int) {
+			defer wg.Done()
+			for j := start; j < end; j++ {
+				distance := haversineDistance(target.Latitude, target.Longitude, allCoordinates[j].Latitude, allCoordinates[j].Longitude)
+				if distance < closestDistance {
+					closestCoordinate = allCoordinates[j]
+					closestDistance = distance
+				}
+			}
+		}(start, end)
+	}
+
+	wg.Wait()
+
+	return closestCoordinate
+}
+
+func deg2rad(deg float64) float64 {
+	return deg * (math.Pi / 180)
+}
+
+func haversineDistance(lat1, lon1, lat2, lon2 float64) float64 {
+	const earthRadius = 6371 // Earth radius in kilometers
+
+	// Convert latitude and longitude from degrees to radians
+	lat1, lon1, lat2, lon2 = deg2rad(lat1), deg2rad(lon1), deg2rad(lat2), deg2rad(lon2)
+
+	// Haversine formula
+	dlat := lat2 - lat1
+	dlon := lon2 - lon1
+	a := math.Sin(dlat/2)*math.Sin(dlat/2) + math.Cos(lat1)*math.Cos(lat2)*math.Sin(dlon/2)*math.Sin(dlon/2)
+	c := 2 * math.Atan2(math.Sqrt(a), math.Sqrt(1-a))
+
+	// Distance in kilometers
+	distance := earthRadius * c
+
+	return distance
+}
+
+func parseCoordinate(s string) (float64, error) {
+	var result float64
+	_, err := fmt.Sscanf(s, "%f", &result)
+	return result, err
+}
+
+func loadCoordinates(filename string) ([]Coordinate, error) {
+	file, err := os.Open(filename)
+	if err != nil {
+		return nil, err
+	}
+	defer file.Close()
+
+	reader := csv.NewReader(file)
+	records, err := reader.ReadAll()
+	if err != nil {
+		return nil, err
+	}
+
+	var coordinates []Coordinate
+	for _, record := range records {
+		latitude, _ := parseCoordinate(record[0])
+		longitude, _ := parseCoordinate(record[1])
+		coordinates = append(coordinates, Coordinate{Latitude: latitude, Longitude: longitude})
+	}
+
+	return coordinates, nil
 }
 
 // Test address: 1700, 6 Northside Dr NW Ste A-5,A, Atlanta, GA 30318
