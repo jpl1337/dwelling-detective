@@ -8,7 +8,7 @@ Problem:
 </summary>
 
 While looking for a new place to buy or rent, users typically want to know what is nearby.
-Or maybe the distance and travel time to a cusom locations like
+Or maybe the distance and travel time to a custom locations like
 work, school, parent's house, friends's house, etc 
 </details>
 
